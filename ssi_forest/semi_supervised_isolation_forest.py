@@ -1,3 +1,5 @@
+from functools import cached_property
+
 import numpy as np
 from scipy.sparse import lil_matrix
 from sklearn.ensemble import IsolationForest
@@ -6,30 +8,29 @@ from sklearn.utils import check_X_y
 
 
 class SemiSupervisedIsolationForest(IsolationForest):
-    def __init__(self, **iforest_kwargs):
-        super().__init__(**iforest_kwargs)
-        self.leaf_impacts_ = None
-        self.sum_leaf_impacts = None
+    X = None
+    y = None
 
     def fit(self, X, y, sample_weight=None):
         X, y = check_X_y(X, y, accept_sparse=['csc'], y_numeric=True)
-
+        self.X = X
+        self.y = y
         super().fit(X, y=None, sample_weight=sample_weight)
 
-        impact_idx = y != 0
-        sample_impact = y[impact_idx]
+    @cached_property
+    def leaf_impacts_(self):
+        impact_idx = self.y != 0
+        sample_impact = self.y[impact_idx]
 
-        self.leaf_impacts_ = []
+        leaf_impacts_ = []
         for tree, features in zip(self.estimators_, self.estimators_features_):
-            X_subset = X[impact_idx, features] if self._max_features != X.shape[1] else X[impact_idx]
+            X_subset = self.X[impact_idx, features] if self._max_features != self.X.shape[1] else self.X[impact_idx]
             leaves_index = tree.apply(X_subset)
-            impacts = lil_matrix((1, tree.tree_.n_node_samples.shape[0]), dtype=y.dtype)
+            impacts = lil_matrix((1, tree.tree_.n_node_samples.shape[0]), dtype=self.y.dtype)
             impacts[0, leaves_index] = sample_impact
-            self.leaf_impacts_.append(impacts)
+            leaf_impacts_.append(impacts)
 
-        self.sum_leaf_impacts = sum(np.sum(impacts) for impacts in self.leaf_impacts_)
-
-        return self
+        return leaf_impacts_
 
     # Mostly copy-pasted from the base class
     def _compute_score_samples(self, X, subsample_features):
@@ -59,7 +60,6 @@ class SemiSupervisedIsolationForest(IsolationForest):
                     - 1.0
                     - np.ravel(impacts[0, leaves_index].toarray())
             )
-            print(impacts[0, leaves_index].toarray())
 
         scores = 2 ** (
                 -depths
