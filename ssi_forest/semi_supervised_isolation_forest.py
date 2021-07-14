@@ -32,36 +32,16 @@ class SemiSupervisedIsolationForest(IsolationForest):
 
         return leaf_impacts_
 
-    # Mostly copy-pasted from the base class
     def _compute_score_samples(self, X, subsample_features):
-        """
-        Compute the score of each samples in X going through the extra trees.
-        Parameters
-        ----------
-        X : array-like or sparse matrix
-            Data matrix.
-        subsample_features : bool
-            Whether features should be subsampled.
-        """
-        n_samples = X.shape[0]
+        scores = super()._compute_score_samples(X, subsample_features)
 
-        depths = np.zeros(n_samples, order="f")
-
+        depths = np.zeros(X.shape[0], order="f")
         for tree, features, impacts in zip(self.estimators_, self.estimators_features_, self.leaf_impacts_):
             X_subset = X[:, features] if subsample_features else X
-
             leaves_index = tree.apply(X_subset)
-            node_indicator = tree.decision_path(X_subset)
-            n_samples_leaf = tree.tree_.n_node_samples[leaves_index]
+            depths += - np.ravel(impacts[0, leaves_index].toarray())
 
-            depths += (
-                    np.ravel(node_indicator.sum(axis=1))
-                    + _average_path_length(n_samples_leaf)
-                    - 1.0
-                    - np.ravel(impacts[0, leaves_index].toarray())
-            )
-
-        scores = 2 ** (
+        scores *= 2 ** (
                 -depths
                 / (len(self.estimators_)
                    * _average_path_length([self.max_samples_]))
