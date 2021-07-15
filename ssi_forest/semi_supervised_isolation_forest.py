@@ -1,15 +1,94 @@
-from functools import cached_property
+from functools import cached_property, partial
+from typing import Callable, Union
 
 import numpy as np
+from numpy.typing import NDArray
+from scipy import ndimage
 from scipy.sparse import lil_matrix
 from sklearn.ensemble import IsolationForest
 from sklearn.ensemble._iforest import _average_path_length
 from sklearn.utils import check_X_y
 
 
+_LABEL_LEAF_REDUCER_T = Callable[[NDArray[np.float64]], float]
+_LABEL_LEAVES_REDUCER_T = Callable[[NDArray[np.float64], NDArray[np.int64], NDArray[np.int64]], NDArray[np.float64]]
+
+
 class SemiSupervisedIsolationForest(IsolationForest):
+    """Biased Isolation Forest
+
+    Parameters
+    ----------
+    label_reducer : str or callable, optional
+        How to reduce multiple labels accrued in a single leaf. Could be:
+            1) a callable with signature `f(labels)` where `labels`
+            is a 1-D array built from `y` values, the callable must return
+            a single floating number
+            2) a string with a name of pre-defined reducer, could be one of:
+            - 'random' (default) gives random label
+            - 'mean' gives mean of all values
+            - 'sum' gives sum of all values
+            - 'absmax' gives label with maximum absolute value
+    """
+
     X = None
     y = None
+
+    def __init__(self, *, label_reducer: Union[str, _LABEL_LEAF_REDUCER_T] = 'random', **iforest_kwargs):
+        super().__init__(**iforest_kwargs)
+        self.rng = np.random.default_rng(iforest_kwargs.get('random_state', None))
+        self.label_reducer: _LABEL_LEAVES_REDUCER_T = self._get_label_reducer(label_reducer)
+
+    def _mean_reducer(self,
+                      values: NDArray[np.float64],
+                      indices: NDArray[np.int64],
+                      unique_indices: NDArray[np.int64]) -> NDArray[np.float64]:
+        return ndimage.mean(
+            values,
+            labels=indices,
+            index=unique_indices,
+        )
+
+    def _sum_reducer(self,
+                     values: NDArray[np.float64],
+                     indices: NDArray[np.int64],
+                     unique_indices: NDArray[np.int64]) -> NDArray[np.float64]:
+        return ndimage.sum_labels(
+            values,
+            labels=indices,
+            index=unique_indices,
+        )
+
+    @staticmethod
+    def _reducer(values: NDArray[np.float64],
+                 indices: NDArray[np.int64],
+                 unique_indices: NDArray[np.int64],
+                 func: _LABEL_LEAF_REDUCER_T) -> NDArray[np.float64]:
+        return ndimage.labeled_comprehension(
+            values,
+            labels=indices,
+            index=unique_indices,
+            func=func,
+            out_dtype=np.float64,
+            default=None,
+        )
+
+    def _absmax_reducer(self,
+                        values: NDArray[np.float64],
+                        indices: NDArray[np.int64],
+                        unique_indices: NDArray[np.int64]) -> NDArray[np.float64]:
+        return self._reducer(values, indices, unique_indices, func=lambda x: x[np.argmax(np.abs(x))])
+
+    def _random_reducer(self,
+                        values: NDArray[np.float64],
+                        indices: NDArray[np.int64],
+                        unique_indices: NDArray[np.int64]) -> NDArray[np.float64]:
+        return self._reducer(values, indices, unique_indices, func=lambda x: self.rng.choice(x))
+
+    def _get_label_reducer(self, x: Union[str, _LABEL_LEAF_REDUCER_T]) -> _LABEL_LEAVES_REDUCER_T:
+        if callable(x):
+            return partial(self._reducer, func=x)
+        return getattr(self, f'_{x}_reducer')
 
     def fit(self, X, y, sample_weight=None):
         X, y = check_X_y(X, y, accept_sparse=['csc'], y_numeric=True)
@@ -26,8 +105,9 @@ class SemiSupervisedIsolationForest(IsolationForest):
         for tree, features in zip(self.estimators_, self.estimators_features_):
             X_subset = self.X[impact_idx, features] if self._max_features != self.X.shape[1] else self.X[impact_idx]
             leaves_index = tree.apply(X_subset)
+            unique_leaves_index = np.unique(leaves_index)
             impacts = lil_matrix((1, tree.tree_.n_node_samples.shape[0]), dtype=self.y.dtype)
-            impacts[0, leaves_index] = sample_impact
+            impacts[0, unique_leaves_index] = self.label_reducer(sample_impact, leaves_index, unique_leaves_index)
             leaf_impacts_.append(impacts)
 
         return leaf_impacts_
