@@ -92,6 +92,8 @@ class SemiSupervisedIsolationForest(IsolationForest):
 
     def fit(self, X, y, sample_weight=None):
         X, y = check_X_y(X, y, accept_sparse=['csc'], y_numeric=True)
+        if np.all(y == 0):
+            raise ValueError('All labels are zero, use scikit.ensemble.IsolationForest instead')
         self.X = X
         self.y = y
         super().fit(X, y=None, sample_weight=sample_weight)
