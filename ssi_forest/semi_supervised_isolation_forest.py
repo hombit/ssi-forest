@@ -1,4 +1,4 @@
-from functools import cached_property, partial
+from functools import partial
 from typing import Callable, Union
 
 import numpy as np
@@ -8,6 +8,11 @@ from scipy.sparse import lil_matrix
 from sklearn.ensemble import IsolationForest
 from sklearn.ensemble._iforest import _average_path_length
 from sklearn.utils import check_X_y
+
+try:
+    from functools import cached_property
+except ImportError:
+    from backports.cached_property import cached_property
 
 
 _LABEL_LEAF_REDUCER_T = Callable[[NDArray[np.float64]], float]
