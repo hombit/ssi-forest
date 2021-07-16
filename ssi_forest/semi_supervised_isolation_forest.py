@@ -20,7 +20,11 @@ _LABEL_LEAVES_REDUCER_T = Callable[[NDArray[np.float64], NDArray[np.int64], NDAr
 
 
 class SemiSupervisedIsolationForest(IsolationForest):
-    """Biased Isolation Forest
+    """
+    Biased Isolation Forest
+
+    The variant of the Isolation Forest (Liu et al 2008) which introduces
+    artificial changes of depths of leaves containing labeled data.
 
     Parameters
     ----------
@@ -96,12 +100,37 @@ class SemiSupervisedIsolationForest(IsolationForest):
         return getattr(self, f'_{x}_reducer')
 
     def fit(self, X, y, sample_weight=None):
+        """
+        Fit estimator.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The input samples. Use ``dtype=np.float32`` for maximum
+            efficiency. Sparse matrices are also supported, use sparse
+            ``csc_matrix`` for maximum efficiency.
+
+        y : {array-like} of shape (n_samples,)
+            Input anomality labels, use zero for non-labeled data, positive
+            values for known anomalies and negative values for known
+            non-anomalies. It is assumed that most of the data is unlabeled,
+            so the most of the elements must be zero. The typical absolute
+            values of labels are between unity and `np.log2(y.shape[0]) / 2`
+
+        sample_weight : array-like of shape (n_samples,), default=None
+            Sample weights. If None, then samples are equally weighted.
+
+        Returns
+        -------
+        self : object
+            Fitted estimator.
+        """
         X, y = check_X_y(X, y, accept_sparse=['csc'], y_numeric=True)
         if np.all(y == 0):
             raise ValueError('All labels are zero, use scikit.ensemble.IsolationForest instead')
         self.X = X
         self.y = y
-        super().fit(X, y=None, sample_weight=sample_weight)
+        return super().fit(X, y=None, sample_weight=sample_weight)
 
     @cached_property
     def leaf_impacts_(self):
@@ -126,7 +155,7 @@ class SemiSupervisedIsolationForest(IsolationForest):
         for tree, features, impacts in zip(self.estimators_, self.estimators_features_, self.leaf_impacts_):
             X_subset = X[:, features] if subsample_features else X
             leaves_index = tree.apply(X_subset)
-            depths += - np.ravel(impacts[0, leaves_index].toarray())
+            depths += -np.ravel(impacts[0, leaves_index].toarray())
 
         scores *= 2 ** (
                 -depths
