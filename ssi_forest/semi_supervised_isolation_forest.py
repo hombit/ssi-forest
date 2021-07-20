@@ -169,3 +169,6 @@ class SemiSupervisedIsolationForest(IsolationForest):
                    * _average_path_length([self.max_samples_]))
         )
         return scores
+
+
+__all__ = ('SemiSupervisedIsolationForest',)
