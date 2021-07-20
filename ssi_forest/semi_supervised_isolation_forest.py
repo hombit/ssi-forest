@@ -2,7 +2,6 @@ from functools import partial
 from typing import Callable, Union
 
 import numpy as np
-from numpy.typing import NDArray
 from scipy import ndimage
 from scipy.sparse import lil_matrix
 from sklearn.ensemble import IsolationForest
@@ -14,9 +13,16 @@ try:
 except ImportError:
     from backports.cached_property import cached_property
 
+try:
+    from numpy.typing import NDArray as _NDArray
+    NDArrayF64 = _NDArray[np.float64]
+    NDArrayI64 = _NDArray[np.int64]
+except ImportError:
+    NDArrayF64 = np.ndarray
+    NDArrayI64 = np.ndarray
 
-_LABEL_LEAF_REDUCER_T = Callable[[NDArray[np.float64]], float]
-_LABEL_LEAVES_REDUCER_T = Callable[[NDArray[np.float64], NDArray[np.int64], NDArray[np.int64]], NDArray[np.float64]]
+_LABEL_LEAF_REDUCER_T = Callable[[NDArrayF64], float]
+_LABEL_LEAVES_REDUCER_T = Callable[[NDArrayF64, NDArrayI64, NDArrayI64], NDArrayF64]
 
 
 class SemiSupervisedIsolationForest(IsolationForest):
@@ -49,9 +55,9 @@ class SemiSupervisedIsolationForest(IsolationForest):
         self.label_reducer: _LABEL_LEAVES_REDUCER_T = self._get_label_reducer(label_reducer)
 
     def _mean_reducer(self,
-                      values: NDArray[np.float64],
-                      indices: NDArray[np.int64],
-                      unique_indices: NDArray[np.int64]) -> NDArray[np.float64]:
+                      values: NDArrayF64,
+                      indices: NDArrayI64,
+                      unique_indices: NDArrayI64) -> NDArrayF64:
         return ndimage.mean(
             values,
             labels=indices,
@@ -59,9 +65,9 @@ class SemiSupervisedIsolationForest(IsolationForest):
         )
 
     def _sum_reducer(self,
-                     values: NDArray[np.float64],
-                     indices: NDArray[np.int64],
-                     unique_indices: NDArray[np.int64]) -> NDArray[np.float64]:
+                     values: NDArrayF64,
+                     indices: NDArrayI64,
+                     unique_indices: NDArrayI64) -> NDArrayF64:
         return ndimage.sum_labels(
             values,
             labels=indices,
@@ -69,10 +75,10 @@ class SemiSupervisedIsolationForest(IsolationForest):
         )
 
     @staticmethod
-    def _reducer(values: NDArray[np.float64],
-                 indices: NDArray[np.int64],
-                 unique_indices: NDArray[np.int64],
-                 func: _LABEL_LEAF_REDUCER_T) -> NDArray[np.float64]:
+    def _reducer(values: NDArrayF64,
+                 indices: NDArrayI64,
+                 unique_indices: NDArrayI64,
+                 func: _LABEL_LEAF_REDUCER_T) -> NDArrayF64:
         return ndimage.labeled_comprehension(
             values,
             labels=indices,
@@ -83,15 +89,15 @@ class SemiSupervisedIsolationForest(IsolationForest):
         )
 
     def _absmax_reducer(self,
-                        values: NDArray[np.float64],
-                        indices: NDArray[np.int64],
-                        unique_indices: NDArray[np.int64]) -> NDArray[np.float64]:
+                        values: NDArrayF64,
+                        indices: NDArrayI64,
+                        unique_indices: NDArrayI64) -> NDArrayF64:
         return self._reducer(values, indices, unique_indices, func=lambda x: x[np.argmax(np.abs(x))])
 
     def _random_reducer(self,
-                        values: NDArray[np.float64],
-                        indices: NDArray[np.int64],
-                        unique_indices: NDArray[np.int64]) -> NDArray[np.float64]:
+                        values: NDArrayF64,
+                        indices: NDArrayI64,
+                        unique_indices: NDArrayI64) -> NDArrayF64:
         return self._reducer(values, indices, unique_indices, func=lambda x: self.rng.choice(x))
 
     def _get_label_reducer(self, x: Union[str, _LABEL_LEAF_REDUCER_T]) -> _LABEL_LEAVES_REDUCER_T:
